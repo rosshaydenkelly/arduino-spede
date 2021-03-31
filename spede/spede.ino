@@ -1,3 +1,9 @@
+#include <pitches.h>
+#include <Tone32.h>
+
+#include <TFT_eSPI.h> // Graphics and font library for ST7735 driver chip
+#include <SPI.h>
+
 // Arduino Spede
 // a Reaction Time Tester
 //
@@ -26,22 +32,26 @@
 
 #include <EEPROM.h>
 
+TFT_eSPI tft = TFT_eSPI();  // Invoke library, pins defined in User_Setup.h
+#define TFT_GREY 0x5AEB // New colour
+
 // Arduino pins connected to latch, clock and data pins of the 74HC595 chip
-const int latchPin = 7;
-const int clockPin = 8;
-const int dataPin = 9;
+//const int latchPin = 7;
+//const int clockPin = 8;
+//const int dataPin = 9;
 
 // Arduino pin connected to the speaker
-const int tonePin = 2;
+const int tonePin = 22;
+const int toneChannel = 0;
 
 // Arduino pins connected to transistors controlling the digits
-const int enableDigits[] = { 13,10,11,12 };
+//const int enableDigits[] = { 13,10,11,12 };
 
 // Arduino pins connected to leds
-const int leds[] = { 3,4,5,6 };
+const int leds[] = { 21, 17, 15, 12 };
 
 // Arduino pins connected to buttons
-const int buttons[] = { 14,15,16,17 };
+const int buttons[] = { 33, 25, 26, 27 };
 
 // Frequencies of tones played when buttons are pressed
 const int toneFreq[] = { 277, 311, 370, 415 };  // CS4, DS4, FS4, GS4
@@ -92,12 +102,19 @@ void writeHiscore() {
 }
 
 void setup() {
-  pinMode(latchPin, OUTPUT);
-  pinMode(clockPin, OUTPUT);
-  pinMode(dataPin, OUTPUT);
+
+  //SetupScreen
+  tft.init();
+  tft.setRotation(1);
   
+  //pinMode(latchPin, OUTPUT);
+  //pinMode(clockPin, OUTPUT);
+  //pinMode(dataPin, OUTPUT);
+
+  /*
   for(int i = 0; i < 4; i++)
     pinMode(enableDigits[i], OUTPUT);
+  */
   
   for(int i = 0; i < 4; i++)
     pinMode(leds[i], OUTPUT);
@@ -109,12 +126,14 @@ void setup() {
   readHiscore();
 }
 
+
 // Updates display with current score.
 // Flashes 4 digits quickly on the display.
 // Display is turned off if enable is false.
+
 void updateDisplay(int score, boolean enable) {
   int s = score;
-  
+  /*
   for(int pos = 0; pos < 4; pos++) {
     int digit = s % 10;
     s /= 10;
@@ -142,7 +161,9 @@ void updateDisplay(int score, boolean enable) {
 
     delayMicroseconds(2000);
   }
+  */
 }
+
 
 // Updates the start menu. Switch between previous score and hiscore on the display.
 // Start a new game when a button is pressed. Clear the hiscore is all buttons are held down for 2 seconds.
@@ -154,7 +175,7 @@ void startMenu() {
   if(startMenuTimer >= 1000)
     s = hiscore;
     
-  updateDisplay(s, startMenuTimer < 975 || (startMenuTimer > 1000 && startMenuTimer < 1975));
+  //updateDisplay(s, startMenuTimer < 975 || (startMenuTimer > 1000 && startMenuTimer < 1975));
   
   // read button state
   int buttonState = 0;
@@ -169,7 +190,7 @@ void startMenu() {
       resetHiscoreTimer = millis();
     if(millis() - resetHiscoreTimer > 2000) {
       updateDisplay(0, false);
-      tone(tonePin, 500, 500);
+      tone(tonePin, 500, 500, toneChannel);
       hiscore = 0;
       writeHiscore();
       delay(700);
@@ -230,10 +251,10 @@ void playGame() {
       led = random(4);
     prevLed = led;
     
-    nextTimer = max(150 * pow(1.6, -level*0.05), 10);
+    nextTimer = _max(150 * pow(1.6, -level*0.05), 10);
     level++;
     
-    tone(tonePin, toneFreq[led], nextTimer * 8);
+    tone(tonePin, toneFreq[led], nextTimer * 8, toneChannel);
     
     score = level;
   }
@@ -258,7 +279,7 @@ void playGame() {
           gameOver();
         }
         //lastButtonPress = millis();
-        noTone(tonePin);
+        noTone(tonePin, toneChannel);
       }
     }
     prevButtonState[i] = but;
@@ -267,7 +288,7 @@ void playGame() {
 
 // Game over. Play a game over sound and blink score.
 void gameOver() {
-  tone(tonePin, 250, 2500);
+  tone(tonePin, 250, 2500, toneChannel);
 
   // new hiscore?
   if(score > hiscore) {
@@ -282,7 +303,7 @@ void gameOver() {
   // flash display
   for(int i = 0; i < 70*5; i++) {
     if(i == 70*2)
-      tone(tonePin, 200, 2000);    
+      tone(tonePin, 200, 2000, toneChannel);    
     boolean enable = 1 - (i/60) & 1;
     updateDisplay(score, enable);
   }
@@ -298,12 +319,57 @@ void gameOver() {
   startMenuTimer = 0;
 }
 
+void printToScreen() {
+    // Fill screen with grey so we can see the effect of printing with and without 
+  // a background colour defined
+  tft.fillScreen(TFT_GREY);
+  
+  // Set "cursor" at top left corner of display (0,0) and select font 2
+  // (cursor will move to next line automatically during printing with 'tft.println'
+  //  or stay on the line is there is room for the text with tft.print)
+  tft.setCursor(0, 0, 2);
+  // Set the font colour to be white with a black background, set text size multiplier to 1
+  tft.setTextColor(TFT_WHITE,TFT_BLACK);  tft.setTextSize(2);
+  // We can now plot text on screen using the "print" class
+  if(state == STATE_START_MENU)
+    tft.println("START_MENU");
+  else if(state == STATE_GAME)
+    tft.println("PLAY_GAME");
+  else
+    tft.println("GAME_OVER");
+
+  // Set the font colour to be green with black background, set to font 2
+  tft.setTextColor(TFT_RED,TFT_BLACK);
+  tft.setTextFont(2);
+  tft.print(digitalRead(leds[0]));
+  tft.print(" - ");
+  tft.print(digitalRead(leds[1]));
+    tft.print(" - ");
+  tft.print(digitalRead(leds[2]));
+    tft.print(" - ");
+  tft.println(digitalRead(leds[3]));
+    
+  // Set the font colour to be green with black background, set to font 2
+  tft.setTextColor(TFT_YELLOW,TFT_BLACK);
+  tft.setTextFont(2);
+  tft.print(digitalRead(buttons[0]));
+  tft.print(" - ");
+  tft.print(digitalRead(buttons[1]));
+    tft.print(" - ");
+  tft.print(digitalRead(buttons[2]));
+    tft.print(" - ");
+  tft.println(digitalRead(buttons[3]));
+}
+
 // Main loop. Update menu, game or game over depending on current state.
 void loop() {
+  
   if(state == STATE_START_MENU)
     startMenu();
   else if(state == STATE_GAME)
     playGame();
   else
     gameOver();
+
+  printToScreen(); 
 }
