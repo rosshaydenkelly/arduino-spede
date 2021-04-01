@@ -44,6 +44,16 @@ TFT_eSPI tft = TFT_eSPI();  // Invoke library, pins defined in User_Setup.h
 const int tonePin = 22;
 const int toneChannel = 0;
 
+unsigned long oldTime = 0;
+unsigned long deltaTime = 0;
+
+int freqency = 2000;
+int channel = 0;
+int resolution = 32;
+int soundDuration = 0;
+int soundPlayedDuration = 0;
+bool mustPlaySound = false;
+
 // Arduino pins connected to transistors controlling the digits
 //const int enableDigits[] = { 13,10,11,12 };
 
@@ -102,10 +112,13 @@ void writeHiscore() {
 }
 
 void setup() {
+  //Setup SoundPin
+  ledcAttachPin(22, channel);
 
   //SetupScreen
   tft.init();
   tft.setRotation(1);
+  tft.setSwapBytes(true);
   
   //pinMode(latchPin, OUTPUT);
   //pinMode(clockPin, OUTPUT);
@@ -190,7 +203,8 @@ void startMenu() {
       resetHiscoreTimer = millis();
     if(millis() - resetHiscoreTimer > 2000) {
       updateDisplay(0, false);
-      tone(tonePin, 500, 500, toneChannel);
+      //tone(tonePin, 500, 500, toneChannel);
+      playSound(500, 500);
       hiscore = 0;
       writeHiscore();
       delay(700);
@@ -254,7 +268,8 @@ void playGame() {
     nextTimer = _max(150 * pow(1.6, -level*0.05), 10);
     level++;
     
-    tone(tonePin, toneFreq[led], nextTimer * 8, toneChannel);
+    //tone(tonePin, toneFreq[led], nextTimer * 8, toneChannel);
+    playSound(toneFreq[led], nextTimer * 8);
     
     score = level;
   }
@@ -275,11 +290,12 @@ void playGame() {
         if( i == led ) {
           score++;
           led = -1;  // turn off led
+          soundPlayedDuration = soundDuration;
         } else {
           gameOver();
         }
         //lastButtonPress = millis();
-        noTone(tonePin, toneChannel);
+        //noTone(tonePin, toneChannel);
       }
     }
     prevButtonState[i] = but;
@@ -289,6 +305,8 @@ void playGame() {
 // Game over. Play a game over sound and blink score.
 void gameOver() {
   tone(tonePin, 250, 2500, toneChannel);
+  playSound(250, 2500);
+  
 
   // new hiscore?
   if(score > hiscore) {
@@ -303,7 +321,8 @@ void gameOver() {
   // flash display
   for(int i = 0; i < 70*5; i++) {
     if(i == 70*2)
-      tone(tonePin, 200, 2000, toneChannel);    
+      //tone(tonePin, 200, 2000, toneChannel);   
+      playSound(200, 2000);
     boolean enable = 1 - (i/60) & 1;
     updateDisplay(score, enable);
   }
@@ -322,7 +341,9 @@ void gameOver() {
 void printToScreen() {
     // Fill screen with grey so we can see the effect of printing with and without 
   // a background colour defined
-  tft.fillScreen(TFT_GREY);
+  tft.fillScreen(TFT_BLACK);
+  
+  //tft.fillRect(78,216,44,12,TFT_BLACK);
   
   // Set "cursor" at top left corner of display (0,0) and select font 2
   // (cursor will move to next line automatically during printing with 'tft.println'
@@ -359,10 +380,43 @@ void printToScreen() {
   tft.print(digitalRead(buttons[2]));
     tft.print(" - ");
   tft.println(digitalRead(buttons[3]));
+
+  tft.println(1000 / deltaTime);
+}
+
+
+
+void CalculateDeltaTime(){
+  deltaTime = millis() - oldTime;
+  oldTime = millis();
+}
+
+void playSound(int freq, int duration){
+    ledcSetup(channel, freq, resolution);
+    freqency = freq;
+    soundDuration = duration;
+    mustPlaySound = true;
+    soundPlayedDuration = 0;
+}
+
+void UpdateSound()
+{
+  if(mustPlaySound == true)
+  {
+    ledcWriteTone(channel, freqency);
+    if(soundPlayedDuration >= soundDuration)
+    {
+      ledcWriteTone(channel, 0);
+      mustPlaySound = false;
+    }
+    
+    soundPlayedDuration += deltaTime; 
+  } 
 }
 
 // Main loop. Update menu, game or game over depending on current state.
 void loop() {
+
   
   if(state == STATE_START_MENU)
     startMenu();
@@ -371,5 +425,7 @@ void loop() {
   else
     gameOver();
 
+  CalculateDeltaTime();
+  UpdateSound();
   printToScreen(); 
 }
