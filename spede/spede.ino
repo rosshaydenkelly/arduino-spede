@@ -49,7 +49,7 @@ unsigned long deltaTime = 0;
 
 int freqency = 2000;
 int channel = 0;
-int resolution = 32;
+int resolution = 8;
 int soundDuration = 0;
 int soundPlayedDuration = 0;
 bool mustPlaySound = false;
