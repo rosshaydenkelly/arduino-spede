@@ -25,23 +25,34 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 
 #include <EEPROM.h>
+#include <LiquidCrystal.h>
+
+// initialize the library by associating any needed LCD interface pin
+// with the arduino pin number it is connected to
+//const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+const int rs = 14, en = 15, d4 = 16, d5 = 17, d6 = 18, d7 = 19;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
 
 // Arduino pins connected to latch, clock and data pins of the 74HC595 chip
-const int latchPin = 7;
-const int clockPin = 8;
-const int dataPin = 9;
+//const int latchPin = 7;
+//const int clockPin = 8;
+//const int dataPin = 9;
+const int latchPin = 20;
+const int clockPin = 21;
+const int dataPin = 22;
 
 // Arduino pin connected to the speaker
-const int tonePin = 2;
+const int tonePin = 9;
 
 // Arduino pins connected to transistors controlling the digits
 const int enableDigits[] = { 13,10,11,12 };
 
 // Arduino pins connected to leds
-const int leds[] = { 3,4,5,6 };
+const int leds[] = { 2,3,4,5 };
 
 // Arduino pins connected to buttons
-const int buttons[] = { 14,15,16,17 };
+const int buttons[] = { 6,7,8,10 };
 
 // Frequencies of tones played when buttons are pressed
 const int toneFreq[] = { 277, 311, 370, 415 };  // CS4, DS4, FS4, GS4
@@ -92,6 +103,11 @@ void writeHiscore() {
 }
 
 void setup() {
+  // set up the LCD's number of columns and rows:
+  lcd.begin(16, 2);
+  // Print a message to the LCD.
+  lcd.print("hello, world!");
+  
   pinMode(latchPin, OUTPUT);
   pinMode(clockPin, OUTPUT);
   pinMode(dataPin, OUTPUT);
@@ -114,6 +130,10 @@ void setup() {
 // Display is turned off if enable is false.
 void updateDisplay(int score, boolean enable) {
   int s = score;
+
+  lcd.setCursor(0, 1);
+  // print the number of seconds since reset:
+  lcd.print(score);
   
   for(int pos = 0; pos < 4; pos++) {
     int digit = s % 10;
