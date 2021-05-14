@@ -1,3 +1,5 @@
+
+
 // Arduino Spede
 // a Reaction Time Tester
 //
@@ -25,13 +27,17 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 
 #include <EEPROM.h>
-#include <LiquidCrystal.h>
+//#include <LiquidCrystal.h>
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
 
 // initialize the library by associating any needed LCD interface pin
 // with the arduino pin number it is connected to
 //const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
 const int rs = 14, en = 15, d4 = 16, d5 = 17, d6 = 18, d7 = 19;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+//LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+// Set the LCD address to 0x27 for a 16 chars and 2 line display
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 
 // Arduino pins connected to latch, clock and data pins of the 74HC595 chip
@@ -73,19 +79,24 @@ int digits[10] = {
 
 enum {
   STATE_START_MENU,
-  STATE_GAME,
-  STATE_GAME_OVER
+  STATE_GAME_OVER,
+  STATE_GAME_STANDARD,
+  STATE_GAME_SPEED,
+  STATE_GAME_MEMORY,
+  STATE_GAME_1V1
 };
 
 int score = 0;
 int led = 0;
 int prevLed = 0;
 int nextTimer = 0;
+long globalGameTimer = 0;
 int level = 0;
 int hiscore = 0;
 int startMenuTimer = 0;
 int prevButtonState[] = { HIGH, HIGH, HIGH, HIGH };
 int state = STATE_START_MENU;
+int prevState = STATE_GAME_OVER;
 
 // Read hiscore value from EEPROM
 void readHiscore() {
@@ -104,9 +115,12 @@ void writeHiscore() {
 
 void setup() {
   // set up the LCD's number of columns and rows:
-  lcd.begin(16, 2);
-  // Print a message to the LCD.
-  lcd.print("Test your Skillz!");
+  //lcd.backlight();
+  //lcd.begin(16, 2);
+
+  Serial.begin(9600);
+  
+  lcd.begin();
   
   pinMode(latchPin, OUTPUT);
   pinMode(clockPin, OUTPUT);
@@ -128,12 +142,48 @@ void setup() {
 // Updates display with current score.
 // Flashes 4 digits quickly on the display.
 // Display is turned off if enable is false.
-void updateDisplay(int score, boolean enable) {
+void updateDisplay(int score, boolean enable, boolean forceDisplayUpdate) {
   int s = score;
-
-  lcd.setCursor(0, 1);
-  // print the number of seconds since reset:
-  lcd.print(score);
+  
+  //update LCD
+  if(state != prevState ||
+      forceDisplayUpdate){
+    if(state == STATE_START_MENU){
+      lcd.clear();
+      lcd.print("   Select Game");
+      lcd.setCursor(0, 1);
+      lcd.print("STD SPD  MEM 1v1");
+    }
+    else if(state == STATE_GAME_OVER){
+      lcd.clear();
+      lcd.print("GAME_OVER");
+    }
+    else if(state == STATE_GAME_STANDARD){
+      lcd.clear();
+      lcd.print("GAME_STANDARD");
+      lcd.setCursor(0, 1);
+      lcd.print(score);
+    }
+    else if(state == STATE_GAME_SPEED){
+      lcd.clear();
+      lcd.print("GAME_SPEED");
+      lcd.setCursor(0, 1);
+      lcd.print(score);
+      lcd.print("      ");
+      lcd.print((millis() - globalGameTimer)/1000);
+    }
+    else if(state == STATE_GAME_MEMORY){
+      lcd.clear();
+      lcd.print("GAME_MEMORY");
+    }
+    else if(state == STATE_GAME_1V1){
+      lcd.clear();
+      lcd.print("GAME_1V1");
+      lcd.setCursor(0, 1);
+      lcd.print(score);
+    }
+    prevState = state;
+  }
   
   for(int pos = 0; pos < 4; pos++) {
     int digit = s % 10;
@@ -162,6 +212,7 @@ void updateDisplay(int score, boolean enable) {
 
     delayMicroseconds(2000);
   }
+  
 }
 
 // Updates the start menu. Switch between previous score and hiscore on the display.
@@ -174,7 +225,7 @@ void startMenu() {
   if(startMenuTimer >= 1000)
     s = hiscore;
     
-  updateDisplay(s, startMenuTimer < 975 || (startMenuTimer > 1000 && startMenuTimer < 1975));
+  updateDisplay(s, startMenuTimer < 975 || (startMenuTimer > 1000 && startMenuTimer < 1975), false);
   
   // read button state
   int buttonState = 0;
@@ -188,7 +239,7 @@ void startMenu() {
     if(resetHiscoreTimer == 0)
       resetHiscoreTimer = millis();
     if(millis() - resetHiscoreTimer > 2000) {
-      updateDisplay(0, false);
+      updateDisplay(0, false, false);
       tone(tonePin, 500, 500);
       hiscore = 0;
       writeHiscore();
@@ -206,9 +257,28 @@ void startMenu() {
       startNewGameTimer = millis();
     if(millis() - startNewGameTimer > 50) {  
       // start new game
-      updateDisplay(score, false);
-      delay(2000);
+      if(buttonState == 1)
+      {
+        state = STATE_GAME_STANDARD;
+      }
+      else if(buttonState == 2)
+      {
+        state = STATE_GAME_SPEED;
+      }
+      else if(buttonState == 4)
+      {
+        state = STATE_GAME_MEMORY;
+      }
+      else if(buttonState == 8)
+      {
+        state = STATE_GAME_1V1;
+      }
+
       startNewGame();
+      updateDisplay(score, false, false);
+      
+      delay(2000);
+      
       startNewGameTimer = 0;
     }
   } else {
@@ -216,14 +286,18 @@ void startMenu() {
   }
 }
 
+int gameSpeed;
+
 // Prepares game state for a new game.
 void startNewGame() {
-  state = STATE_GAME;
+  //state = STATE_GAME;
   score = 0;
   level = -1;
   led = -1;
   prevLed = -1;
   nextTimer = 0;
+  globalGameTimer = 0;
+  gameSpeed = 100;  // initial game speed, higher values are slower 450 default
  
   for(int i = 0; i < 4; i++) 
     prevButtonState[i] = HIGH;
@@ -232,7 +306,11 @@ void startNewGame() {
   randomSeed(millis());
 }
 
-void playGame() {
+//=====================================================
+// Game 1: Standard Game
+//=====================================================
+
+void playStandardGame() {
   // update time
   nextTimer--;
   
@@ -250,7 +328,23 @@ void playGame() {
       led = random(4);
     prevLed = led;
     
+    //original gameSpeed algorith.
     nextTimer = max(150 * pow(1.6, -level*0.05), 10);
+
+    //spede2 algorith
+    /*
+    if(level < 40)
+      gameSpeed -= 3;
+    else if(level < 80)
+      gameSpeed -= 2;
+    else if(level < 120)
+      gameSpeed--;
+    else
+      gameSpeed -= level & 1;
+    gameSpeed = max(gameSpeed, 100);
+    nextTimer = gameSpeed;
+    */
+    
     level++;
     
     tone(tonePin, toneFreq[led], nextTimer * 8);
@@ -262,7 +356,7 @@ void playGame() {
   for(int i = 0; i < 4; i++)
     digitalWrite(leds[i], led == i || (digitalRead(buttons[i]) == LOW && nextTimer > 5) ? HIGH : LOW);
    
-  updateDisplay(score, true);
+  updateDisplay(score, true, false);
   
   // read input   
   for(int i = 0; i < 4; i++) {
@@ -273,6 +367,7 @@ void playGame() {
         // correct button pressed?
         if( i == led ) {
           score++;
+          updateDisplay(score, true, true);
           led = -1;  // turn off led
         } else {
           gameOver();
@@ -283,6 +378,136 @@ void playGame() {
     }
     prevButtonState[i] = but;
   }
+}
+
+//=====================================================
+// Game 2: Speed Game
+//=====================================================
+void playSpeedGame() {
+  int speedGameLengthMillis = 10000;
+  //update screen
+  updateDisplay(score, true, false);
+
+  if(globalGameTimer == 0){
+    globalGameTimer = millis();
+  }
+  else{
+    //Serial.println("Global: " + globalGameTimer);
+    
+    if(nextTimer <= 0) {
+      led = random(4);
+      // make consequent same leds less probable
+      if(led == prevLed)
+        led = random(4);
+      if(led == prevLed)
+        led = random(4);
+      prevLed = led;
+      nextTimer = 1;
+    }
+
+    // update leds
+    for(int i = 0; i < 4; i++)
+    digitalWrite(leds[i], led == i || (digitalRead(buttons[i]) == LOW && nextTimer > 5) ? HIGH : LOW);
+    //digitalWrite(leds[i], led == i);
+
+    //tone(tonePin, toneFreq[led], nextTimer * 8);
+    tone(tonePin, toneFreq[led], 100);
+
+    // read input   
+    for(int i = 0; i < 4; i++) {
+      int but = digitalRead(buttons[i]);
+      if(but == LOW && prevButtonState[i] == HIGH) {
+        // ignore button press if time since last press is too short
+        if( led >= 0 ) { //&& millis() - lastButtonPress > 50 ) { 
+          // correct button pressed?
+          if( i == led ) {
+            score++;
+            updateDisplay(score, true, true);
+            led = -1;  // turn off led
+            nextTimer = 0;
+          } else {
+            gameOver();
+          }
+          //lastButtonPress = millis();
+          noTone(tonePin);
+        }
+      }
+      prevButtonState[i] = but;
+    }
+  }
+
+  //Check if time has run out
+  if((millis() - globalGameTimer) > speedGameLengthMillis){
+    gameOver();
+  }
+
+  //update display with Game name
+  //start speed timer eg 30s
+  //activate random led
+  //read input == to led
+  //score++
+  //when timer end, game over, display score
+  //gameover()
+}
+
+//=====================================================
+// Game 3: Memory Game
+//=====================================================
+void playMemoryGame() {
+  updateDisplay(score, true, false);
+  delay(2000);
+  gameOver();
+}
+
+//=====================================================
+// Game 4: 1v1 Game
+//=====================================================
+void play1v1Game() {
+  //update screen
+  updateDisplay(score, true, false);
+  
+  //random delay as game starts
+  if(globalGameTimer == 0){
+    delay(5000 - random(4000));
+    globalGameTimer = millis();
+
+    //light up LEDS
+    digitalWrite(leds[0], HIGH);
+    digitalWrite(leds[3], HIGH);
+  }
+  else{
+    //start timer
+  
+    // read input   
+    for(int i = 0; i < 4; i++) {
+      int but = digitalRead(buttons[i]);
+      if(but == LOW && prevButtonState[i] == HIGH) {
+        // ignore button press if time since last press is too short
+
+        score = millis() - globalGameTimer;    //delay(gameStartDelayTimer);
+        
+        if(i == 0){
+          updateDisplay(score, true, true);
+          digitalWrite(leds[0], HIGH);
+          digitalWrite(leds[3], LOW);
+        }
+        else if(i == 3){
+          updateDisplay(score, true, true);
+          digitalWrite(leds[0], LOW);
+          digitalWrite(leds[3], HIGH);
+        }
+        else{
+          return;
+        }
+        
+        delay(2000);
+        gameOver();
+      }
+      prevButtonState[i] = but;
+    }
+  }
+
+  //display results
 }
 
 // Game over. Play a game over sound and blink score.
@@ -304,13 +529,13 @@ void gameOver() {
     if(i == 70*2)
       tone(tonePin, 200, 2000);    
     boolean enable = 1 - (i/60) & 1;
-    updateDisplay(score, enable);
+    updateDisplay(score, enable, false);
   }
   
   // turn off leds
   for(int i = 0; i < 4; i++)
     digitalWrite(leds[i], LOW);
-   updateDisplay(score, false);
+   updateDisplay(score, false, false);
   
   // enter menu
   //delay(1000);
@@ -322,8 +547,14 @@ void gameOver() {
 void loop() {
   if(state == STATE_START_MENU)
     startMenu();
-  else if(state == STATE_GAME)
-    playGame();
+  else if(state == STATE_GAME_STANDARD)
+    playStandardGame();
+  else if(state == STATE_GAME_SPEED)
+    playSpeedGame();
+  else if(state == STATE_GAME_MEMORY)
+    playMemoryGame();
+  else if(state == STATE_GAME_1V1)
+    play1v1Game();
   else
     gameOver();
 }
